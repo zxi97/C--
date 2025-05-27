@@ -6,6 +6,7 @@
 #include <vector> // 用于 std::vector
 #include <locale> // for tolower
 #include <iostream> // 添加 iostream 用于 std::cout, std::cerr, std::endl, std::hex, std::dec
+#include <algorithm> // 用于 std::replace
 
 
 // 构造函数
@@ -260,15 +261,27 @@ void Model::ProcessFBXMesh(FbxMesh* pMesh, LPDIRECT3DDEVICE9 pd3dDevice)
     if (!pMesh)
         return;
 
+    std::cout << "Processing FBX Mesh: " << pMesh->GetName() << std::endl;
+    std::cout << "Control Points Count: " << pMesh->GetControlPointsCount() << std::endl;
+    std::cout << "Polygon Count: " << pMesh->GetPolygonCount() << std::endl;
+
     // 获取顶点数据
     int vertexCount = pMesh->GetControlPointsCount();
     FbxVector4* pVertices = pMesh->GetControlPoints();
 
     // 获取法线数据
     FbxLayerElementNormal* pNormals = pMesh->GetLayer(0)->GetNormals();
+    if (pNormals)
+    {
+        std::cout << "Normals found in layer 0" << std::endl;
+    }
 
     // 获取UV数据
     FbxLayerElementUV* pUVs = pMesh->GetLayer(0)->GetUVs();
+    if (pUVs)
+    {
+        std::cout << "UVs found in layer 0" << std::endl;
+    }
 
     // 创建DirectX网格
     LPD3DXMESH pD3DMesh = nullptr;
@@ -292,10 +305,97 @@ void Model::ProcessFBXMesh(FbxMesh* pMesh, LPDIRECT3DDEVICE9 pd3dDevice)
 
     if (SUCCEEDED(hr))
     {
+        std::cout << "Successfully created D3DXMesh" << std::endl;
+
+        // 获取顶点缓冲区
+        void* pVertices = nullptr;
+        pD3DMesh->LockVertexBuffer(0, &pVertices);
+        
+        // 获取索引缓冲区
+        void* pIndices = nullptr;
+        pD3DMesh->LockIndexBuffer(0, &pIndices);
+
         // 填充顶点数据
-        // ... 这里需要实现顶点数据的转换 ...
+        struct Vertex {
+            D3DXVECTOR3 position;
+            D3DXVECTOR3 normal;
+            D3DXVECTOR2 texCoord;
+        };
+        Vertex* pVertexData = (Vertex*)pVertices;
+        WORD* pIndexData = (WORD*)pIndices;
+
+        // 遍历所有多边形
+        for (int polyIndex = 0; polyIndex < pMesh->GetPolygonCount(); polyIndex++)
+        {
+            // 获取多边形的顶点数（通常是3，因为是三角形）
+            int polySize = pMesh->GetPolygonSize(polyIndex);
+            
+            // 遍历多边形的每个顶点
+            for (int vertIndex = 0; vertIndex < polySize; vertIndex++)
+            {
+                int controlPointIndex = pMesh->GetPolygonVertex(polyIndex, vertIndex);
+                
+                // 设置位置
+                FbxVector4 vertex = pMesh->GetControlPointAt(controlPointIndex);
+                pVertexData[controlPointIndex].position = D3DXVECTOR3(
+                    (float)vertex[0],
+                    (float)vertex[1],
+                    (float)vertex[2]
+                );
+
+                // 设置法线
+                if (pNormals)
+                {
+                    FbxVector4 normal;
+                    pMesh->GetPolygonVertexNormal(polyIndex, vertIndex, normal);
+                    pVertexData[controlPointIndex].normal = D3DXVECTOR3(
+                        (float)normal[0],
+                        (float)normal[1],
+                        (float)normal[2]
+                    );
+                }
+                else
+                {
+                    pVertexData[controlPointIndex].normal = D3DXVECTOR3(0.0f, 1.0f, 0.0f);
+                }
+
+                // 设置UV坐标
+                if (pUVs)
+                {
+                    FbxVector2 uv;
+                    bool unmapped;
+                    pMesh->GetPolygonVertexUV(polyIndex, vertIndex, pUVs->GetName(), uv, unmapped);
+                    pVertexData[controlPointIndex].texCoord = D3DXVECTOR2(
+                        (float)uv[0],
+                        (float)uv[1]
+                    );
+                }
+                else
+                {
+                    pVertexData[controlPointIndex].texCoord = D3DXVECTOR2(0.0f, 0.0f);
+                }
+
+                // 设置索引
+                pIndexData[polyIndex * 3 + vertIndex] = controlPointIndex;
+            }
+        }
+
+        // 解锁缓冲区
+        pD3DMesh->UnlockVertexBuffer();
+        pD3DMesh->UnlockIndexBuffer();
+
+        // 计算法线（如果需要）
+        D3DXComputeNormals(pD3DMesh, NULL);
+
+        // 设置材质数量
+        m_dwNumMaterials = pMesh->GetElementMaterialCount() > 0 ? pMesh->GetElementMaterialCount() : 1;
 
         m_vFBXMeshes.push_back(pD3DMesh);
+        std::cout << "Successfully processed mesh with " << m_dwNumMaterials << " materials" << std::endl;
+    }
+    else
+    {
+        std::cerr << "Failed to create D3DXMesh. HRESULT: 0x" << std::hex << hr << std::dec << std::endl;
     }
 }
 
@@ -326,10 +426,94 @@ void Model::ProcessFBXMaterial(FbxSurfaceMaterial* pMaterial)
 
     material.Power = 20.0f;
 
+    // 处理材质属性
+    if (pMaterial->GetClassId().Is(FbxSurfacePhong::ClassId))
+    {
+        FbxSurfacePhong* pPhong = (FbxSurfacePhong*)pMaterial;
+        
+        // 设置漫反射颜色
+        FbxDouble3 diffuse = pPhong->Diffuse.Get();
+        material.Diffuse.r = (float)diffuse[0];
+        material.Diffuse.g = (float)diffuse[1];
+        material.Diffuse.b = (float)diffuse[2];
+        
+        // 设置环境光颜色
+        FbxDouble3 ambient = pPhong->Ambient.Get();
+        material.Ambient.r = (float)ambient[0];
+        material.Ambient.g = (float)ambient[1];
+        material.Ambient.b = (float)ambient[2];
+        
+        // 设置镜面反射颜色
+        FbxDouble3 specular = pPhong->Specular.Get();
+        material.Specular.r = (float)specular[0];
+        material.Specular.g = (float)specular[1];
+        material.Specular.b = (float)specular[2];
+        
+        // 设置光泽度
+        material.Power = (float)pPhong->Shininess.Get();
+    }
+    else if (pMaterial->GetClassId().Is(FbxSurfaceLambert::ClassId))
+    {
+        FbxSurfaceLambert* pLambert = (FbxSurfaceLambert*)pMaterial;
+        
+        // 设置漫反射颜色
+        FbxDouble3 diffuse = pLambert->Diffuse.Get();
+        material.Diffuse.r = (float)diffuse[0];
+        material.Diffuse.g = (float)diffuse[1];
+        material.Diffuse.b = (float)diffuse[2];
+        
+        // 设置环境光颜色
+        FbxDouble3 ambient = pLambert->Ambient.Get();
+        material.Ambient.r = (float)ambient[0];
+        material.Ambient.g = (float)ambient[1];
+        material.Ambient.b = (float)ambient[2];
+    }
+
     m_vMaterials.push_back(material);
 
     // 处理纹理
-    // ... 这里需要实现纹理的加载 ...
+    MyImageInfo textureInfo;
+    ZeroMemory(&textureInfo, sizeof(MyImageInfo));
+
+    // 获取漫反射纹理
+    FbxProperty diffuseProperty = pMaterial->FindProperty(FbxSurfaceMaterial::sDiffuse);
+    if (diffuseProperty.IsValid())
+    {
+        int textureCount = diffuseProperty.GetSrcObjectCount<FbxTexture>();
+        for (int i = 0; i < textureCount; i++)
+        {
+            FbxTexture* pTexture = diffuseProperty.GetSrcObject<FbxTexture>(i);
+            if (pTexture)
+            {
+                FbxFileTexture* pFileTexture = FbxCast<FbxFileTexture>(pTexture);
+                if (pFileTexture)
+                {
+                    const char* texturePath = pFileTexture->GetFileName();
+                    if (texturePath)
+                    {
+                        // 转换路径格式
+                        std::string texturePathStr = texturePath;
+                        std::replace(texturePathStr.begin(), texturePathStr.end(), '\\', '/');
+                        
+                        // 加载纹理
+                        TSTRING path = multi_byte_to_wide_char(texturePathStr.c_str(), 0);
+                        HRESULT hr = CGraphic::GetSingleObjPtr()->LoadTex(path.c_str(), textureInfo, 0);
+                        if (SUCCEEDED(hr))
+                        {
+                            m_vTextures.push_back(textureInfo);
+                            break;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    // 如果没有找到纹理，添加一个空的纹理信息
+    if (m_vTextures.size() < m_vMaterials.size())
+    {
+        m_vTextures.push_back(textureInfo);
+    }
 }
 
 // 渲染函数
@@ -351,20 +535,42 @@ void Model::Render(LPDIRECT3DDEVICE9 pd3dDevice) {
             m_pMesh->DrawSubset(i);
         }
     } else if (m_modelType == ModelType::FBX_MODEL) {
+        std::cout << "Rendering FBX Model with " << m_vFBXMeshes.size() << " meshes" << std::endl;
+        std::cout << "Number of materials: " << m_dwNumMaterials << std::endl;
+        
         // 渲染FBX模型
         for (size_t i = 0; i < m_vFBXMeshes.size(); i++)
         {
             if (m_vFBXMeshes[i])
             {
-                for (DWORD j = 0; j < m_dwNumMaterials; j++)
+                std::cout << "Rendering mesh " << i << std::endl;
+                
+                // 设置材质
+                if (i < m_vMaterials.size())
                 {
-                    pd3dDevice->SetMaterial(&m_vMaterials[j]);
-                    if (j < m_vTextures.size() && m_vTextures[j].pTex)
-                    {
-                        pd3dDevice->SetTexture(0, m_vTextures[j].pTex);
-                    }
-                    m_vFBXMeshes[i]->DrawSubset(j);
+                    std::cout << "Setting material " << i << std::endl;
+                    pd3dDevice->SetMaterial(&m_vMaterials[i]);
                 }
+                else if (!m_vMaterials.empty())
+                {
+                    std::cout << "Using default material" << std::endl;
+                    pd3dDevice->SetMaterial(&m_vMaterials[0]);
+                }
+
+                // 设置纹理
+                if (i < m_vTextures.size() && m_vTextures[i].pTex)
+                {
+                    std::cout << "Setting texture " << i << std::endl;
+                    pd3dDevice->SetTexture(0, m_vTextures[i].pTex);
+                }
+                else
+                {
+                    std::cout << "No texture for mesh " << i << std::endl;
+                    pd3dDevice->SetTexture(0, nullptr);
+                }
+
+                // 渲染网格
+                m_vFBXMeshes[i]->DrawSubset(0);
             }
         }
     }

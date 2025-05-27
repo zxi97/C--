@@ -77,7 +77,6 @@ LRESULT EventProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam)
             float sensitivity = 0.005f; // 鼠标灵敏度
             xOffset *= sensitivity;
             yOffset *= sensitivity;
-            //1111111111111111111111111111
             fYaw += xOffset;
             fPitch += yOffset;
 

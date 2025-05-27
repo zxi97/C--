@@ -74,6 +74,12 @@
     <OutDir>../../bin</OutDir>
     <IntDir>../../temp/dx_3D</IntDir>
     <IncludePath>../../FBX SDK/include;../../common/dx/include;../../common;$(IncludePath)</IncludePath>
+    <LibraryPath>../../FBX SDK/lib/x64/debug;../../FBX SDK/lib;../../common/dx/lib;../../common;$(LibraryPath)</LibraryPath>
+  </PropertyGroup>
+  <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
+    <OutDir>../../bin</OutDir>
+    <IntDir>../../temp/dx_3D</IntDir>
+    <IncludePath>../../FBX SDK/include;../../common/dx/include;../../common;$(IncludePath)</IncludePath>
     <LibraryPath>../../FBX SDK/lib/x64/release;../../FBX SDK/lib;../../common/dx/lib;../../common;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
@@ -114,7 +120,7 @@
     <Link>
       <SubSystem>Windows</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>libfbxsdk.lib;libxml2-md.lib;zlib-md.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>libfbxsdk-md.lib;libxml2-md.lib;zlib-md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
@@ -131,6 +137,7 @@
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
       <GenerateDebugInformation>true</GenerateDebugInformation>
+      <AdditionalDependencies>libfbxsdk.lib;libxml2-md.lib;zlib-md.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
